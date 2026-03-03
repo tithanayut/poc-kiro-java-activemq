@@ -17,6 +17,8 @@ public class MessageConsumer {
 
     private final String brokerUrl;
     private final String topicName;
+    private final String clientId;
+    private final String subscriptionName;
     private final BatchState batchState;
     private final BatchFileWriter fileWriter;
     private final ObjectMapper objectMapper;
@@ -26,8 +28,15 @@ public class MessageConsumer {
     private jakarta.jms.MessageConsumer consumer;
 
     public MessageConsumer(String brokerUrl, String topicName, BatchState batchState, BatchFileWriter fileWriter) {
+        this(brokerUrl, topicName, "order-consumer-client", "order-consumer-subscription", batchState, fileWriter);
+    }
+
+    public MessageConsumer(String brokerUrl, String topicName, String clientId, String subscriptionName,
+                          BatchState batchState, BatchFileWriter fileWriter) {
         this.brokerUrl = brokerUrl;
         this.topicName = topicName;
+        this.clientId = clientId;
+        this.subscriptionName = subscriptionName;
         this.batchState = batchState;
         this.fileWriter = fileWriter;
         this.objectMapper = new ObjectMapper();
@@ -35,19 +44,21 @@ public class MessageConsumer {
 
     public void start() throws JMSException {
         logger.info("[Consumer] Connecting to ActiveMQ at: {}", brokerUrl);
-        
+        logger.info("[Consumer] Using durable subscription - clientId: {}, subscriptionName: {}", clientId, subscriptionName);
+
         ActiveMQConnectionFactory connectionFactory = new ActiveMQConnectionFactory(brokerUrl);
         connection = connectionFactory.createConnection();
+        connection.setClientID(clientId);
         connection.start();
-        
-        logger.info("[Consumer] Successfully connected to ActiveMQ");
-        
+
+        logger.info("[Consumer] Successfully connected to ActiveMQ with client ID: {}", clientId);
+
         session = connection.createSession(false, Session.CLIENT_ACKNOWLEDGE);
         Topic topic = session.createTopic(topicName);
-        consumer = session.createConsumer(topic);
-        
-        logger.info("[Consumer] Subscribed to topic: {}", topicName);
-        
+        consumer = session.createDurableSubscriber(topic, subscriptionName);
+
+        logger.info("[Consumer] Created durable subscription: {} on topic: {}", subscriptionName, topicName);
+
         consumer.setMessageListener(message -> {
             try {
                 processMessage(message);
@@ -62,18 +73,18 @@ public class MessageConsumer {
             if (message instanceof TextMessage) {
                 TextMessage textMessage = (TextMessage) message;
                 String messageText = textMessage.getText();
-                
+
                 JsonNode jsonNode = objectMapper.readTree(messageText);
                 String orderId = jsonNode.get("orderId").asText();
                 String productId = jsonNode.get("productId").asText();
-                
+
                 logger.info("[Consumer] Received message - orderId: {}, productId: {}", orderId, productId);
-                
+
                 Product product = new Product(orderId, productId);
                 batchState.addProduct(product);
-                
+
                 message.acknowledge();
-                
+
                 if (batchState.isFull()) {
                     fileWriter.writeBatch(batchState);
                 }

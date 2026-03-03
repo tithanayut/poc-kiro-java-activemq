@@ -24,10 +24,14 @@ public class ConsumerApplication {
             String topicName = config.getProperty("activemq.topic.name");
             String outputDirectory = config.getProperty("output.directory.path");
             int batchSize = Integer.parseInt(config.getProperty("batch.size"));
+            String clientId = config.getProperty("activemq.client.id", "order-consumer-1");
+            String subscriptionName = config.getProperty("activemq.subscription.name", "order-subscription");
 
             logger.info("[Consumer] Configuration loaded:");
             logger.info("[Consumer]   ActiveMQ Broker URL: {}", brokerUrl);
             logger.info("[Consumer]   Topic Name: {}", topicName);
+            logger.info("[Consumer]   Client ID: {}", clientId);
+            logger.info("[Consumer]   Subscription Name: {}", subscriptionName);
             logger.info("[Consumer]   Output Directory: {}", outputDirectory);
             logger.info("[Consumer]   Batch Size: {}", batchSize);
 
@@ -42,7 +46,8 @@ public class ConsumerApplication {
             BatchFileWriter fileWriter = new BatchFileWriter(outputDirectory);
 
             // Initialize and start message consumer
-            MessageConsumer messageConsumer = new MessageConsumer(brokerUrl, topicName, batchState, fileWriter);
+            MessageConsumer messageConsumer = new MessageConsumer(brokerUrl, topicName, clientId, subscriptionName, 
+                                                                  batchState, fileWriter);
             messageConsumer.start();
 
             logger.info("[Consumer] Consumer service started successfully");
