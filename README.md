@@ -1,12 +1,43 @@
 # Order Processing Service
 
-A distributed order processing system built with Java, Spring Boot, and ActiveMQ. The system receives HTTP order requests, publishes product messages to ActiveMQ, and processes them in batches for persistent storage.
+A distributed order processing system built with Java, Spring Boot, and ActiveMQ. This is a Kiro proof-of-concept demonstrating spec-driven development for a producer-consumer messaging architecture.
+
+## Overview
+
+The system receives HTTP order requests, decomposes them into individual messages, and processes these products in batches of 5 for persistent storage. Each batch is written to a separate numbered file (PRODUCT_ORDER_1.txt, PRODUCT_ORDER_2.txt, etc.) in pipe-delimited format (ORDER_ID|PRODUCT_ID).
 
 ## Architecture
 
+```mermaid
+graph TB
+    Client[Client Application]
+    Producer[Producer Service]
+    ActiveMQ[ActiveMQ Broker]
+    Consumer[Consumer Service]
+    Files[PRODUCT_ORDER_*.txt]
+    
+    Client -->|HTTP POST /orders| Producer
+    Producer -->|Publish ProductId Messages| ActiveMQ
+    ActiveMQ -->|Subscribe to Topic| Consumer
+    Consumer -->|Write Batches| Files
+    
+    style Producer fill:#e1f5ff
+    style Consumer fill:#fff4e1
+    style ActiveMQ fill:#f0e1ff
+```
+
+### Components
+
 - **Producer Service**: HTTP server that receives order requests and publishes product messages to ActiveMQ
-- **Consumer Service**: Message processor that batches products and writes them to numbered files
+- **Consumer Service**: Message processor that batches products (default: 5 per batch) and writes them to numbered files
 - **ActiveMQ Broker**: Message broker providing publish-subscribe messaging via topics
+
+### Key Features
+
+- **Batch Processing**: Products are accumulated in memory and written in batches of 5 to reduce I/O operations
+- **Persistent File Counter**: Consumer automatically resumes file numbering after restart by scanning existing files
+- **Topic-Based Messaging**: Using ActiveMQ topics for scalable publish-subscribe patterns
+- **Pipe-Delimited Output**: Each line in output files follows ORDER_ID|PRODUCT_ID format
 
 ## Prerequisites
 
@@ -65,6 +96,10 @@ activemq.topic.name=products.topic
 
 # HTTP Server Configuration
 server.port=8080
+
+# Logging Configuration
+logging.level.com.orderprocessing=INFO
+logging.pattern.console=%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n
 ```
 
 ### Consumer Configuration
@@ -75,10 +110,16 @@ Edit `consumer/src/main/resources/application.properties`:
 # ActiveMQ Configuration
 activemq.broker.url=tcp://localhost:61616
 activemq.topic.name=products.topic
+activemq.client.id=order-consumer-1
+activemq.subscription.name=order-subscription
 
 # Batch Configuration
 batch.size=5
 output.directory.path=./output
+
+# Logging Configuration
+logging.level.com.orderprocessing=INFO
+logging.pattern.console=%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n
 ```
 
 ## API Usage
