@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  activemq:
+    image: apache/activemq-classic:latest
+    container_name: activemq
+    ports:
+      - "61616:61616"  # OpenWire protocol
+      - "8161:8161"    # Web console
+    volumes:
+      - activemq-data:/opt/apache-activemq/data
+    environment:
+      - ACTIVEMQ_OPTS=-Xmx512m -Djetty.host=0.0.0.0 -Djava.util.logging.config.file=logging.properties -Djava.security.auth.login.config=/opt/apache-activemq/conf/login.config
+
+volumes:
+  activemq-data:
+    driver: local
