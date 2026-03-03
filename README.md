@@ -4,7 +4,55 @@ A distributed order processing system built with Java, Spring Boot, and ActiveMQ
 
 ## Overview
 
-The system receives HTTP order requests, decomposes them into individual messages, and processes these products in batches of 5 for persistent storage. Each batch is written to a separate numbered file (PRODUCT_ORDER_1.txt, PRODUCT_ORDER_2.txt, etc.) in pipe-delimited format (ORDER_ID|PRODUCT_ID).
+The Order Processing Service demonstrates a distributed messaging architecture where HTTP order requests are decomposed into individual product messages, queued through ActiveMQ, and processed in batches for persistent storage.
+
+### How It Works
+
+1. **Client submits an order** via HTTP POST with an order ID and list of product IDs
+2. **Producer decomposes** the order into individual product messages (one per product)
+3. **ActiveMQ persists** messages using durable topic subscriptions
+4. **Consumer accumulates** products in memory until batch size (5) is reached
+5. **Batch is written** to a numbered file in pipe-delimited format
+
+### Example Flow
+
+**Input Request:**
+```json
+POST /orders
+{
+  "orderId": "ORD-123",
+  "productIds": ["PROD-A", "PROD-B", "PROD-C"]
+}
+```
+
+**Producer publishes 3 messages to ActiveMQ:**
+```json
+{"orderId": "ORD-123", "productId": "PROD-A"}
+{"orderId": "ORD-123", "productId": "PROD-B"}
+{"orderId": "ORD-123", "productId": "PROD-C"}
+```
+
+**Consumer accumulates in batch:**
+```
+Batch: [ORD-123|PROD-A, ORD-123|PROD-B, ORD-123|PROD-C, ...]
+```
+
+**When batch reaches 5 products, writes to file:**
+```
+PRODUCT_ORDER_1.txt:
+ORD-123|PROD-A
+ORD-123|PROD-B
+ORD-123|PROD-C
+ORD-456|PROD-X
+ORD-456|PROD-Y
+```
+
+### Key Characteristics
+
+- **Zero Message Loss**: Durable subscriptions ensure messages are persisted even when consumer is offline
+- **Batch Efficiency**: Writing in batches of 5 reduces I/O operations by 80%
+- **Automatic Recovery**: Consumer resumes file numbering by scanning existing files on startup
+- **Scalable Design**: Topic-based messaging supports multiple independent consumers
 
 ## Architecture
 
