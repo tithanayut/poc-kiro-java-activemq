@@ -1,77 +1,32 @@
 package com.orderprocessing.consumer;
 
-import com.orderprocessing.consumer.batch.BatchState;
-import com.orderprocessing.consumer.file.BatchFileWriter;
-import com.orderprocessing.consumer.file.FileCounterInitializer;
-import com.orderprocessing.consumer.messaging.MessageConsumer;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.orderprocessing.consumer.service.BatchService;
+import jakarta.annotation.PreDestroy;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.jms.annotation.EnableJms;
 
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.util.Properties;
-
+@SpringBootApplication
+@EnableJms
+@Slf4j
 public class ConsumerApplication {
 
-    private static final Logger logger = LoggerFactory.getLogger(ConsumerApplication.class);
+    private final BatchService batchService;
 
-    public static void main(String[] args) {
-        try {
-            // Load configuration
-            Properties config = loadConfiguration();
-            
-            String brokerUrl = config.getProperty("activemq.broker.url");
-            String topicName = config.getProperty("activemq.topic.name");
-            String outputDirectory = config.getProperty("output.directory.path");
-            int batchSize = Integer.parseInt(config.getProperty("batch.size"));
-            String clientId = config.getProperty("activemq.client.id", "order-consumer-1");
-            String subscriptionName = config.getProperty("activemq.subscription.name", "order-subscription");
-
-            logger.info("[Consumer] Configuration loaded:");
-            logger.info("[Consumer]   ActiveMQ Broker URL: {}", brokerUrl);
-            logger.info("[Consumer]   Topic Name: {}", topicName);
-            logger.info("[Consumer]   Client ID: {}", clientId);
-            logger.info("[Consumer]   Subscription Name: {}", subscriptionName);
-            logger.info("[Consumer]   Output Directory: {}", outputDirectory);
-            logger.info("[Consumer]   Batch Size: {}", batchSize);
-
-            // Initialize file counter
-            FileCounterInitializer counterInitializer = new FileCounterInitializer(outputDirectory);
-            int initialFileCounter = counterInitializer.initialize();
-
-            // Initialize batch state
-            BatchState batchState = new BatchState(batchSize, initialFileCounter);
-
-            // Initialize file writer
-            BatchFileWriter fileWriter = new BatchFileWriter(outputDirectory);
-
-            // Initialize and start message consumer
-            MessageConsumer messageConsumer = new MessageConsumer(brokerUrl, topicName, clientId, subscriptionName, 
-                                                                  batchState, fileWriter);
-            messageConsumer.start();
-
-            logger.info("[Consumer] Consumer service started successfully");
-
-            // Add shutdown hook
-            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                logger.info("[Consumer] Shutting down consumer service...");
-                messageConsumer.stop();
-            }));
-
-            // Keep the application running
-            Thread.currentThread().join();
-
-        } catch (Exception e) {
-            logger.error("[Consumer] Failed to start consumer service", e);
-            System.exit(1);
-        }
+    public ConsumerApplication(BatchService batchService) {
+        this.batchService = batchService;
     }
 
-    private static Properties loadConfiguration() throws IOException {
-        Properties properties = new Properties();
-        try (FileInputStream fis = new FileInputStream("./src/main/resources/application.properties")) {
-            properties.load(fis);
-        }
-        return properties;
+    public static void main(String[] args) {
+        SpringApplication.run(ConsumerApplication.class, args);
+        log.info("[Consumer] Consumer service started successfully");
+    }
+
+    @PreDestroy
+    public void onShutdown() {
+        log.info("[Consumer] Shutting down consumer service...");
+        batchService.flush();
+        log.info("[Consumer] Shutdown complete");
     }
 }

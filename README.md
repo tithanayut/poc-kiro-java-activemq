@@ -126,7 +126,7 @@ In a new terminal:
 
 ```bash
 cd consumer
-mvn exec:java -Dexec.mainClass="com.orderprocessing.consumer.ConsumerApplication"
+mvn spring-boot:run
 ```
 
 The Consumer will start processing messages from ActiveMQ.

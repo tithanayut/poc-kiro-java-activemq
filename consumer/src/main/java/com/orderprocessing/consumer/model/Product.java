@@ -1,44 +1,36 @@
 package com.orderprocessing.consumer.model;
 
-import java.util.Objects;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
+@Data
+@NoArgsConstructor
 public class Product {
-
-    private final String orderId;
-    private final String productId;
+    private String orderId;
+    private String productId;
 
     public Product(String orderId, String productId) {
+        if (orderId == null || orderId.trim().isEmpty()) {
+            throw new IllegalArgumentException("orderId must not be null or empty");
+        }
+        if (productId == null || productId.trim().isEmpty()) {
+            throw new IllegalArgumentException("productId must not be null or empty");
+        }
         this.orderId = orderId;
         this.productId = productId;
     }
 
-    public String getOrderId() {
-        return orderId;
+    public void setOrderId(String orderId) {
+        if (orderId == null || orderId.trim().isEmpty()) {
+            throw new IllegalArgumentException("orderId must not be null or empty");
+        }
+        this.orderId = orderId;
     }
 
-    public String getProductId() {
-        return productId;
-    }
-
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-        Product product = (Product) o;
-        return Objects.equals(orderId, product.orderId) && 
-               Objects.equals(productId, product.productId);
-    }
-
-    @Override
-    public int hashCode() {
-        return Objects.hash(orderId, productId);
-    }
-
-    @Override
-    public String toString() {
-        return "Product{" +
-                "orderId='" + orderId + '\'' +
-                ", productId='" + productId + '\'' +
-                '}';
+    public void setProductId(String productId) {
+        if (productId == null || productId.trim().isEmpty()) {
+            throw new IllegalArgumentException("productId must not be null or empty");
+        }
+        this.productId = productId;
     }
 }
