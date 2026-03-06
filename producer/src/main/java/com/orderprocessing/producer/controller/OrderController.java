@@ -3,6 +3,10 @@ package com.orderprocessing.producer.controller;
 import com.orderprocessing.producer.connection.ActiveMQConnectionManager;
 import com.orderprocessing.producer.model.OrderRequest;
 import com.orderprocessing.producer.service.OrderService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,6 +21,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/orders")
+@Tag(name = "Orders", description = "Order processing endpoints")
 public class OrderController {
 
     private static final Logger logger = LoggerFactory.getLogger(OrderController.class);
@@ -30,6 +35,12 @@ public class OrderController {
     }
 
     @PostMapping
+    @Operation(summary = "Create a new order", description = "Submits an order to the ActiveMQ topic for processing")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "202", description = "Order accepted for processing"),
+            @ApiResponse(responseCode = "400", description = "Invalid order data"),
+            @ApiResponse(responseCode = "503", description = "Service temporarily unavailable")
+    })
     public ResponseEntity<Map<String, String>> createOrder(@Valid @RequestBody OrderRequest orderRequest) {
         try {
             if (connectionManager.isReconnecting()) {
