@@ -42,9 +42,9 @@ public class MessagePublisher : IMessagePublisher
         {
             var connection = await _connectionManager.GetConnectionAsync();
             
-            using var session = await Task.Run(() => connection.CreateSession(AcknowledgementMode.AutoAcknowledge));
-            using var destination = await Task.Run(() => session.GetTopic(_settings.TopicName));
-            using var producer = await Task.Run(() => session.CreateProducer(destination));
+            using var session = connection.CreateSession(AcknowledgementMode.AutoAcknowledge);
+            using var destination = session.GetTopic(_settings.TopicName);
+            using var producer = session.CreateProducer(destination);
 
             foreach (var productId in productIdList)
             {
@@ -55,9 +55,9 @@ public class MessagePublisher : IMessagePublisher
                 };
 
                 var json = JsonSerializer.Serialize(productMessage);
-                var textMessage = await Task.Run(() => session.CreateTextMessage(json));
+                var textMessage = session.CreateTextMessage(json);
                 
-                await Task.Run(() => producer.Send(textMessage));
+                producer.Send(textMessage);
                 
                 _logger.LogDebug("Published message for order {OrderId}, product {ProductId} to topic {TopicName}", 
                     orderId, productId, _settings.TopicName);
