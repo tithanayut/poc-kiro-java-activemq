@@ -1,10 +1,13 @@
-# Order Processing Service
+# Order Processing Service - .NET Migration
 
-A distributed order processing system built with Java, Spring Boot, and ActiveMQ. This is a Kiro proof-of-concept demonstrating spec-driven development for a producer-consumer messaging architecture.
+A distributed order processing system migrated from Java Spring Boot to C# .NET. This system demonstrates a producer-consumer messaging architecture using ActiveMQ for asynchronous message processing.
 
 ## Overview
 
-The Order Processing Service demonstrates a distributed messaging architecture where HTTP order requests are decomposed into individual product messages, queued through ActiveMQ, and processed in batches for persistent storage.
+The Order Processing Service consists of two independent .NET services that communicate via Apache ActiveMQ:
+
+- **Producer Service**: ASP.NET Core Web API that receives HTTP order requests and publishes product messages to ActiveMQ
+- **Consumer Service**: .NET Worker Service that processes messages in batches and writes them to numbered files
 
 ### How It Works
 
@@ -47,55 +50,25 @@ ORD-456|PROD-X
 ORD-456|PROD-Y
 ```
 
-### Key Characteristics
+### Key Features
 
 - **Zero Message Loss**: Durable subscriptions ensure messages are persisted even when consumer is offline
 - **Batch Efficiency**: Writing in batches of 5 reduces I/O operations by 80%
 - **Automatic Recovery**: Consumer resumes file numbering by scanning existing files on startup
-- **Scalable Design**: Topic-based messaging supports multiple independent consumers
-
-## Architecture
-
-```mermaid
-graph TB
-    Client[Client Application]
-    Producer[Producer Service]
-    ActiveMQ[ActiveMQ Broker]
-    Consumer[Consumer Service]
-    Files[PRODUCT_ORDER_*.txt]
-    
-    Client -->|HTTP POST /orders| Producer
-    Producer -->|Publish ProductId Messages| ActiveMQ
-    ActiveMQ -->|Subscribe to Topic| Consumer
-    Consumer -->|Write Batches| Files
-    
-    style Producer fill:#e1f5ff
-    style Consumer fill:#fff4e1
-    style ActiveMQ fill:#f0e1ff
-```
-
-### Components
-
-- **Producer Service**: HTTP server that receives order requests and publishes product messages to ActiveMQ
-- **Consumer Service**: Message processor that batches products (default: 5 per batch) and writes them to numbered files
-- **ActiveMQ Broker**: Message broker providing publish-subscribe messaging via topics
-
-### Key Features
-
-- **Batch Processing**: Products are accumulated in memory and written in batches of 5 to reduce I/O operations
-- **Persistent File Counter**: Consumer automatically resumes file numbering after restart by scanning existing files
-- **Topic-Based Messaging**: Using ActiveMQ topics for scalable publish-subscribe patterns
-- **Pipe-Delimited Output**: Each line in output files follows ORDER_ID|PRODUCT_ID format
+- **Connection Resilience**: Automatic reconnection with exponential backoff when ActiveMQ is unavailable
+- **Graceful Shutdown**: Consumer writes partial batches before stopping to prevent data loss
 
 ## Prerequisites
 
-- Java 17 or higher
-- Maven 3.6 or higher
+- .NET 8.0 SDK or later
 - Docker and Docker Compose
+- curl (for testing)
 
 ## Quick Start
 
 ### 1. Start ActiveMQ
+
+Start the ActiveMQ broker using Docker Compose:
 
 ```bash
 docker-compose up -d
@@ -103,79 +76,83 @@ docker-compose up -d
 
 ActiveMQ will be available at:
 - OpenWire protocol: `tcp://localhost:61616`
-- Web console: `http://localhost:8161` (admin/admin)
+- Web console: `http://localhost:8161` (credentials: admin/admin)
 
-### 2. Build the Project
-
+Verify ActiveMQ is running:
 ```bash
-mvn clean install
+docker ps
 ```
 
-### 3. Run the Producer
+### 2. Build the .NET Solution
+
+Build both Producer and Consumer services:
 
 ```bash
-cd producer
-mvn spring-boot:run
+dotnet build OrderProcessing.sln
 ```
 
-The Producer HTTP server will start on port 8080.
+Or build individual projects:
+```bash
+dotnet build Producer.Service/Producer.Service.csproj
+dotnet build Consumer.Service/Consumer.Service.csproj
+```
 
-### 4. Run the Consumer
+### 3. Run the Producer Service
 
-In a new terminal:
+Start the Producer service:
 
 ```bash
-cd consumer
-mvn spring-boot:run
+cd Producer.Service
+dotnet run
+```
+
+Or run directly from the solution root:
+```bash
+dotnet run --project Producer.Service/Producer.Service.csproj
+```
+
+The Producer HTTP API will start on `http://localhost:5000`.
+
+You should see log output indicating successful startup:
+```
+info: Producer.Service.Program[0]
+      Producer service starting...
+info: Producer.Service.Services.ConnectionManager[0]
+      Connected to ActiveMQ at activemq:tcp://localhost:61616
+```
+
+### 4. Run the Consumer Service
+
+In a new terminal, start the Consumer service:
+
+```bash
+cd Consumer.Service
+dotnet run
+```
+
+Or run directly from the solution root:
+```bash
+dotnet run --project Consumer.Service/Consumer.Service.csproj
 ```
 
 The Consumer will start processing messages from ActiveMQ.
 
-## Configuration
-
-### Producer Configuration
-
-Edit `producer/src/main/resources/application.properties`:
-
-```properties
-# ActiveMQ Configuration
-activemq.broker.url=tcp://localhost:61616
-activemq.topic.name=products.topic
-
-# HTTP Server Configuration
-server.port=8080
-
-# Logging Configuration
-logging.level.com.orderprocessing=INFO
-logging.pattern.console=%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n
+You should see log output indicating successful startup:
+```
+info: Consumer.Service.Worker[0]
+      Consumer Worker starting at: 01/15/2024 10:30:45
+info: Consumer.Service.Services.MessageConsumer[0]
+      Connected to ActiveMQ topic: product.orders
 ```
 
-### Consumer Configuration
-
-Edit `consumer/src/main/resources/application.properties`:
-
-```properties
-# ActiveMQ Configuration
-activemq.broker.url=tcp://localhost:61616
-activemq.topic.name=products.topic
-activemq.client.id=order-consumer-1
-activemq.subscription.name=order-subscription
-
-# Batch Configuration
-batch.size=5
-output.directory.path=./output
-
-# Logging Configuration
-logging.level.com.orderprocessing=INFO
-logging.pattern.console=%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n
-```
-
-## API Usage
+## Testing the System
 
 ### Submit an Order
 
+Use curl to submit an order with multiple products:
+
 ```bash
-curl -X POST http://localhost:8080/orders \
+curl -X POST http://localhost:5000/orders \
   -H "Content-Type: application/json" \
   -d '{
     "orderId": "ORD-123",
@@ -183,17 +160,80 @@ curl -X POST http://localhost:8080/orders \
   }'
 ```
 
-**Response:**
-- `202 Accepted`: Order accepted and products published
-- `400 Bad Request`: Missing orderId or productIds
-- `503 Service Unavailable`: ActiveMQ connection unavailable
+**Expected Response:**
+```
+HTTP/1.1 202 Accepted
+```
+
+### Submit Multiple Orders
+
+Test batch processing by submitting multiple orders:
+
+```bash
+# Order 1 - 3 products
+curl -X POST http://localhost:5000/orders \
+  -H "Content-Type: application/json" \
+  -d '{"orderId": "ORD-001", "productIds": ["PROD-A", "PROD-B", "PROD-C"]}'
+
+# Order 2 - 2 products (completes first batch of 5)
+curl -X POST http://localhost:5000/orders \
+  -H "Content-Type: application/json" \
+  -d '{"orderId": "ORD-002", "productIds": ["PROD-D", "PROD-E"]}'
+
+# Order 3 - 4 products
+curl -X POST http://localhost:5000/orders \
+  -H "Content-Type: application/json" \
+  -d '{"orderId": "ORD-003", "productIds": ["PROD-F", "PROD-G", "PROD-H", "PROD-I"]}'
+```
+
+After these requests, you should see:
+- `PRODUCT_ORDER_1.txt` with 5 products (PROD-A through PROD-E)
+- `PRODUCT_ORDER_2.txt` with 4 products (PROD-F through PROD-I) after Consumer shutdown
+
+### Test Error Handling
+
+**Missing orderId:**
+```bash
+curl -X POST http://localhost:5000/orders \
+  -H "Content-Type: application/json" \
+  -d '{"productIds": ["PROD-1"]}'
+```
+Expected: `400 Bad Request`
+
+**Missing productIds:**
+```bash
+curl -X POST http://localhost:5000/orders \
+  -H "Content-Type: application/json" \
+  -d '{"orderId": "ORD-123"}'
+```
+Expected: `400 Bad Request`
+
+**Empty productIds array:**
+```bash
+curl -X POST http://localhost:5000/orders \
+  -H "Content-Type: application/json" \
+  -d '{"orderId": "ORD-123", "productIds": []}'
+```
+Expected: `400 Bad Request`
+
+**ActiveMQ unavailable:**
+```bash
+# Stop ActiveMQ
+docker-compose down
+
+# Try to submit order
+curl -X POST http://localhost:5000/orders \
+  -H "Content-Type: application/json" \
+  -d '{"orderId": "ORD-123", "productIds": ["PROD-1"]}'
+```
+Expected: `503 Service Unavailable`
 
 ## Output Files
 
 The Consumer writes batches to numbered files in the output directory:
 
 ```
-output/
+Consumer.Service/output/
 ├── PRODUCT_ORDER_1.txt
 ├── PRODUCT_ORDER_2.txt
 └── PRODUCT_ORDER_3.txt
@@ -209,67 +249,172 @@ ORD-456|PROD-4
 ORD-789|PROD-5
 ```
 
-## File Counter Persistence
+### File Counter Persistence
 
-The Consumer automatically resumes file numbering after restart by scanning existing files in the output directory. If files `PRODUCT_ORDER_1.txt` through `PRODUCT_ORDER_5.txt` exist, the next batch will be written to `PRODUCT_ORDER_6.txt`.
+The Consumer automatically resumes file numbering after restart by scanning existing files. If files `PRODUCT_ORDER_1.txt` through `PRODUCT_ORDER_5.txt` exist, the next batch will be written to `PRODUCT_ORDER_6.txt`.
 
-## Testing
+## Configuration
 
-### Run Unit Tests
+### Producer Service Configuration
 
-```bash
-mvn test
+Edit `Producer.Service/appsettings.json`:
+
+```json
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "Kestrel": {
+    "Endpoints": {
+      "Http": {
+        "Url": "http://localhost:5000"
+      }
+    }
+  },
+  "Producer": {
+    "BrokerUrl": "activemq:tcp://localhost:61616",
+    "TopicName": "product.orders",
+    "Retry": {
+      "InitialDelayMs": 1000,
+      "MaxDelayMs": 60000,
+      "BackoffMultiplier": 2.0
+    }
+  }
+}
 ```
 
-### Run Integration Tests
+**Configuration Options:**
 
-```bash
-mvn verify
+- `Kestrel.Endpoints.Http.Url`: HTTP server listening address (default: `http://localhost:5000`)
+- `Producer.BrokerUrl`: ActiveMQ broker connection URL (default: `activemq:tcp://localhost:61616`)
+- `Producer.TopicName`: ActiveMQ topic name for publishing messages (default: `product.orders`)
+- `Producer.Retry.InitialDelayMs`: Initial retry delay in milliseconds (default: 1000)
+- `Producer.Retry.MaxDelayMs`: Maximum retry delay in milliseconds (default: 60000)
+- `Producer.Retry.BackoffMultiplier`: Exponential backoff multiplier (default: 2.0)
+- `Logging.LogLevel.Default`: Default log level (options: Trace, Debug, Information, Warning, Error, Critical)
+
+### Consumer Service Configuration
+
+Edit `Consumer.Service/appsettings.json`:
+
+```json
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.Hosting.Lifetime": "Information"
+    }
+  },
+  "Consumer": {
+    "BrokerUrl": "activemq:tcp://localhost:61616",
+    "TopicName": "product.orders",
+    "ClientId": "consumer-service-1",
+    "SubscriptionName": "product-order-subscription",
+    "BatchSize": 5,
+    "OutputDirectory": "./output",
+    "FileWriter": {
+      "MaxRetryAttempts": 3,
+      "RetryDelayMs": 1000
+    }
+  }
+}
 ```
 
-## Logging
+**Configuration Options:**
 
-Both services log to console with the following format:
+- `Consumer.BrokerUrl`: ActiveMQ broker connection URL (default: `activemq:tcp://localhost:61616`)
+- `Consumer.TopicName`: ActiveMQ topic name for subscription (default: `product.orders`)
+- `Consumer.ClientId`: Unique client identifier for durable subscription (default: `consumer-service-1`)
+- `Consumer.SubscriptionName`: Durable subscription name (default: `product-order-subscription`)
+- `Consumer.BatchSize`: Number of products per batch before writing to file (default: 5)
+- `Consumer.OutputDirectory`: Directory path for output files (default: `./output`)
+- `Consumer.FileWriter.MaxRetryAttempts`: Maximum file write retry attempts (default: 3)
+- `Consumer.FileWriter.RetryDelayMs`: Delay between file write retries in milliseconds (default: 1000)
+- `Logging.LogLevel.Default`: Default log level (options: Trace, Debug, Information, Warning, Error, Critical)
+
+## Architecture
 
 ```
-2024-01-15 10:30:45.123 [main] INFO  c.o.producer.ProducerApplication - [Producer] Configuration loaded
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│  Producer       │     │   ActiveMQ      │     │   Consumer      │
+│  Service        │────▶│   Broker        │────▶│   Service       │
+│  (ASP.NET Core) │     │   (Docker)      │     │   (Worker)      │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+        │                       │                         │
+        │                       │                         │
+        ▼                       ▼                         ▼
+   Port 5000              Port 61616               Output Directory
+                          Port 8161                (PRODUCT_ORDER_*.txt)
 ```
 
-Log levels can be adjusted in `application.properties`:
+### Producer Service Components
 
-```properties
-logging.level.com.orderprocessing=INFO
-```
+- **OrderController**: HTTP endpoint handling and request validation
+- **MessagePublisher**: Message publishing and ActiveMQ interaction
+- **ConnectionManager**: ActiveMQ connection lifecycle and retry logic with exponential backoff
+
+### Consumer Service Components
+
+- **MessageConsumer**: Message subscription and batch coordination with durable subscriptions
+- **BatchProcessor**: Batch accumulation and file writing coordination
+- **FileWriter**: File I/O operations with retry logic
+- **FileCounterManager**: File counter persistence across restarts
 
 ## Troubleshooting
 
 ### Producer returns 503 Service Unavailable
 
+**Cause**: ActiveMQ is not running or not accessible
+
+**Solutions**:
 - Check if ActiveMQ is running: `docker ps`
 - Verify ActiveMQ is accessible: `telnet localhost 61616`
 - Check Producer logs for connection errors
+- Restart ActiveMQ: `docker-compose restart activemq`
 
 ### Consumer not processing messages
 
+**Cause**: Consumer is not connected to ActiveMQ or topic name mismatch
+
+**Solutions**:
 - Verify Consumer is connected to ActiveMQ (check logs)
 - Ensure topic name matches in both Producer and Consumer configuration
-- Check ActiveMQ web console for message count
+- Check ActiveMQ web console (`http://localhost:8161`) for message count
+- Verify durable subscription exists in ActiveMQ console
 
 ### Output files not created
 
+**Cause**: Batch size not reached or output directory not writable
+
+**Solutions**:
 - Verify output directory exists and is writable
 - Check Consumer logs for file write errors
 - Ensure batch size is reached (default: 5 products)
+- Submit more orders to complete a batch
+
+### Build errors
+
+**Cause**: Missing .NET SDK or NuGet package restore issues
+
+**Solutions**:
+- Verify .NET SDK is installed: `dotnet --version`
+- Restore NuGet packages: `dotnet restore`
+- Clean and rebuild: `dotnet clean && dotnet build`
 
 ## Stopping the Services
 
-### Stop Producer
+### Stop Producer Service
 
 Press `Ctrl+C` in the Producer terminal
 
-### Stop Consumer
+### Stop Consumer Service
 
 Press `Ctrl+C` in the Consumer terminal
+
+The Consumer will gracefully shutdown and write any partial batch to a file before exiting.
 
 ### Stop ActiveMQ
 
@@ -277,26 +422,108 @@ Press `Ctrl+C` in the Consumer terminal
 docker-compose down
 ```
 
+To remove volumes as well:
+```bash
+docker-compose down -v
+```
+
 ## Project Structure
 
 ```
-order-processing-service/
-├── producer/                   # Producer service (Spring Boot)
-│   └── src/main/java/com/orderprocessing/producer/
-│       ├── controller/        # REST controllers
-│       ├── service/           # Business logic
-│       ├── model/             # Data models
-│       ├── connection/        # ActiveMQ connection management
-│       └── config/            # Spring configuration
-├── consumer/                   # Consumer service (standalone Java)
-│   └── src/main/java/com/orderprocessing/consumer/
-│       ├── messaging/         # Message consumption
-│       ├── batch/             # Batch state management
-│       ├── file/              # File operations
-│       └── model/             # Data models
-├── docker-compose.yml         # ActiveMQ container configuration
-└── pom.xml                    # Maven parent POM
+OrderProcessing/
+├── Producer.Service/              # Producer service (ASP.NET Core Web API)
+│   ├── Controllers/              # REST controllers
+│   │   └── OrderController.cs
+│   ├── Services/                 # Business logic
+│   │   ├── MessagePublisher.cs
+│   │   └── ConnectionManager.cs
+│   ├── Models/                   # Data models
+│   │   ├── OrderRequest.cs
+│   │   ├── ProductMessage.cs
+│   │   └── ProducerSettings.cs
+│   ├── Interfaces/               # Service interfaces
+│   │   ├── IMessagePublisher.cs
+│   │   └── IConnectionManager.cs
+│   ├── appsettings.json          # Configuration
+│   └── Program.cs                # Application entry point
+│
+├── Consumer.Service/              # Consumer service (.NET Worker Service)
+│   ├── Services/                 # Business logic
+│   │   ├── MessageConsumer.cs
+│   │   ├── BatchProcessor.cs
+│   │   ├── FileWriter.cs
+│   │   └── FileCounterManager.cs
+│   ├── Models/                   # Data models
+│   │   ├── Product.cs
+│   │   ├── ConsumerSettings.cs
+│   │   └── FileWriterSettings.cs
+│   ├── Interfaces/               # Service interfaces
+│   │   ├── IMessageConsumer.cs
+│   │   ├── IBatchProcessor.cs
+│   │   ├── IFileWriter.cs
+│   │   └── IFileCounterManager.cs
+│   ├── output/                   # Output directory for batch files
+│   ├── appsettings.json          # Configuration
+│   ├── Program.cs                # Application entry point
+│   └── Worker.cs                 # Background worker
+│
+├── docker-compose.yml             # ActiveMQ container configuration
+├── OrderProcessing.sln            # .NET solution file
+└── README.md                      # This file
 ```
+
+## Development
+
+### Running in Development Mode
+
+Both services support development-specific configuration via `appsettings.Development.json`.
+
+Set the environment variable:
+```bash
+export ASPNETCORE_ENVIRONMENT=Development  # Linux/macOS
+set ASPNETCORE_ENVIRONMENT=Development     # Windows
+```
+
+### Viewing Logs
+
+Both services log to console. Adjust log levels in `appsettings.json`:
+
+```json
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Producer.Service": "Debug",
+      "Consumer.Service": "Debug"
+    }
+  }
+}
+```
+
+### ActiveMQ Web Console
+
+Access the ActiveMQ web console at `http://localhost:8161`:
+- Username: `admin`
+- Password: `admin`
+
+Use the console to:
+- Monitor topic message counts
+- View durable subscriptions
+- Check connection status
+- Browse messages
+
+## Migration Notes
+
+This project is a migration from Java Spring Boot to C# .NET. Key differences:
+
+- **Framework**: Spring Boot → ASP.NET Core / .NET Worker Service
+- **Dependency Injection**: Spring IoC → Microsoft.Extensions.DependencyInjection
+- **Configuration**: application.properties → appsettings.json
+- **Build Tool**: Maven → dotnet CLI
+- **Package Manager**: Maven Central → NuGet
+- **ActiveMQ Client**: Spring JMS → Apache.NMS.ActiveMQ
+
+The functional behavior remains identical to the original Java implementation.
 
 ## License
 
